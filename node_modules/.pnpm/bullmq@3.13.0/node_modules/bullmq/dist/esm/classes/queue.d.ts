@@ -1,0 +1,232 @@
+import { BaseJobOptions, BulkJobOptions, IoredisListener, QueueOptions, RepeatOptions } from '../interfaces';
+import { FinishedStatus, JobsOptions } from '../types';
+import { Job } from './job';
+import { QueueGetters } from './queue-getters';
+import { Repeat } from './repeat';
+import { RedisConnection } from './redis-connection';
+export interface ObliterateOpts {
+    /**
+     * Use force = true to force obliteration even with active jobs in the queue
+     * @defaultValue false
+     */
+    force?: boolean;
+    /**
+     * Use count with the maximum number of deleted keys per iteration
+     * @defaultValue 1000
+     */
+    count?: number;
+}
+export interface QueueListener<DataType, ResultType, NameType extends string> extends IoredisListener {
+    /**
+     * Listen to 'cleaned' event.
+     *
+     * This event is triggered when the queue calls clean method.
+     */
+    cleaned: (jobs: string[], type: string) => void;
+    /**
+     * Listen to 'error' event.
+     *
+     * This event is triggered when an error is thrown.
+     */
+    error: (err: Error) => void;
+    /**
+     * Listen to 'paused' event.
+     *
+     * This event is triggered when the queue is paused.
+     */
+    paused: () => void;
+    /**
+     * Listen to 'progress' event.
+     *
+     * This event is triggered when the job updates its progress.
+     */
+    progress: (job: Job<DataType, ResultType, NameType>, progress: number | object) => void;
+    /**
+     * Listen to 'removed' event.
+     *
+     * This event is triggered when a job is removed.
+     */
+    removed: (job: Job<DataType, ResultType, NameType>) => void;
+    /**
+     * Listen to 'resumed' event.
+     *
+     * This event is triggered when the queue is resumed.
+     */
+    resumed: () => void;
+    /**
+     * Listen to 'waiting' event.
+     *
+     * This event is triggered when the queue creates a new job.
+     */
+    waiting: (job: Job<DataType, ResultType, NameType>) => void;
+}
+/**
+ * Queue
+ *
+ * This class provides methods to add jobs to a queue and some othe high-level
+ * administration such as pausing or deleting queues.
+ *
+ */
+export declare class Queue<DataType = any, ResultType = any, NameType extends string = string> extends QueueGetters<DataType, ResultType, NameType> {
+    token: string;
+    jobsOpts: BaseJobOptions;
+    private _repeat?;
+    constructor(name: string, opts?: QueueOptions, Connection?: typeof RedisConnection);
+    emit<U extends keyof QueueListener<DataType, ResultType, NameType>>(event: U, ...args: Parameters<QueueListener<DataType, ResultType, NameType>[U]>): boolean;
+    off<U extends keyof QueueListener<DataType, ResultType, NameType>>(eventName: U, listener: QueueListener<DataType, ResultType, NameType>[U]): this;
+    on<U extends keyof QueueListener<DataType, ResultType, NameType>>(event: U, listener: QueueListener<DataType, ResultType, NameType>[U]): this;
+    once<U extends keyof QueueListener<DataType, ResultType, NameType>>(event: U, listener: QueueListener<DataType, ResultType, NameType>[U]): this;
+    /**
+     * Returns this instance current default job options.
+     */
+    get defaultJobOptions(): JobsOptions;
+    get repeat(): Promise<Repeat>;
+    /**
+     * Adds a new job to the queue.
+     *
+     * @param name - Name of the job to be added to the queue,.
+     * @param data - Arbitrary data to append to the job.
+     * @param opts - Job options that affects how the job is going to be processed.
+     */
+    add(name: NameType, data: DataType, opts?: JobsOptions): Promise<Job<DataType, ResultType, NameType>>;
+    /**
+     * Adds an array of jobs to the queue. This method may be faster than adding
+     * one job at a time in a sequence.
+     *
+     * @param jobs - The array of jobs to add to the queue. Each job is defined by 3
+     * properties, 'name', 'data' and 'opts'. They follow the same signature as 'Queue.add'.
+     */
+    addBulk(jobs: {
+        name: NameType;
+        data: DataType;
+        opts?: BulkJobOptions;
+    }[]): Promise<Job<DataType, ResultType, NameType>[]>;
+    /**
+     * Pauses the processing of this queue globally.
+     *
+     * We use an atomic RENAME operation on the wait queue. Since
+     * we have blocking calls with BRPOPLPUSH on the wait queue, as long as the queue
+     * is renamed to 'paused', no new jobs will be processed (the current ones
+     * will run until finalized).
+     *
+     * Adding jobs requires a LUA script to check first if the paused list exist
+     * and in that case it will add it there instead of the wait list.
+     */
+    pause(): Promise<void>;
+    /**
+     * Close the queue instance.
+     *
+     */
+    close(): Promise<void>;
+    /**
+     * Resumes the processing of this queue globally.
+     *
+     * The method reverses the pause operation by resuming the processing of the
+     * queue.
+     */
+    resume(): Promise<void>;
+    /**
+     * Returns true if the queue is currently paused.
+     */
+    isPaused(): Promise<boolean>;
+    /**
+     * Get all repeatable meta jobs.
+     *
+     * @param start - Offset of first job to return.
+     * @param end - Offset of last job to return.
+     * @param asc - Determine the order in which jobs are returned based on their
+     * next execution time.
+     */
+    getRepeatableJobs(start?: number, end?: number, asc?: boolean): Promise<{
+        key: string;
+        name: string;
+        id: string;
+        endDate: number;
+        tz: string;
+        pattern: string;
+        next: number;
+    }[]>;
+    /**
+     * Removes a repeatable job.
+     *
+     * Note: you need to use the exact same repeatOpts when deleting a repeatable job
+     * than when adding it.
+     *
+     * @see removeRepeatableByKey
+     *
+     * @param name -
+     * @param repeatOpts -
+     * @param jobId -
+     * @returns
+     */
+    removeRepeatable(name: NameType, repeatOpts: RepeatOptions, jobId?: string): Promise<boolean>;
+    /**
+     * Removes a repeatable job by its key. Note that the key is the one used
+     * to store the repeatable job metadata and not one of the job iterations
+     * themselves. You can use "getRepeatableJobs" in order to get the keys.
+     *
+     * @see getRepeatableJobs
+     *
+     * @param key - to the repeatable job.
+     * @returns
+     */
+    removeRepeatableByKey(key: string): Promise<boolean>;
+    /**
+     * Removes the given job from the queue as well as all its
+     * dependencies.
+     *
+     * @param jobId - The id of the job to remove
+     * @returns 1 if it managed to remove the job or 0 if the job or
+     * any of its dependencies were locked.
+     */
+    remove(jobId: string): Promise<number>;
+    /**
+     * Drains the queue, i.e., removes all jobs that are waiting
+     * or delayed, but not active, completed or failed.
+     *
+     * @param delayed - Pass true if it should also clean the
+     * delayed jobs.
+     */
+    drain(delayed?: boolean): Promise<void>;
+    /**
+     * Cleans jobs from a queue. Similar to drain but keeps jobs within a certain
+     * grace period.
+     *
+     * @param grace - The grace period
+     * @param limit - Max number of jobs to clean
+     * @param type - The type of job to clean
+     * Possible values are completed, wait, active, paused, delayed, failed. Defaults to completed.
+     * @returns Id jobs from the deleted records
+     */
+    clean(grace: number, limit: number, type?: 'completed' | 'wait' | 'active' | 'paused' | 'delayed' | 'failed'): Promise<string[]>;
+    /**
+     * Completely destroys the queue and all of its contents irreversibly.
+     * This method will the *pause* the queue and requires that there are no
+     * active jobs. It is possible to bypass this requirement, i.e. not
+     * having active jobs using the "force" option.
+     *
+     * Note: This operation requires to iterate on all the jobs stored in the queue
+     * and can be slow for very large queues.
+     *
+     * @param opts - Obliterate options.
+     */
+    obliterate(opts?: ObliterateOpts): Promise<void>;
+    /**
+     * Retry all the failed jobs.
+     *
+     * @param opts - contains number to limit how many jobs will be moved to wait status per iteration,
+     * state (failed, completed) failed by default or from which timestamp.
+     * @returns
+     */
+    retryJobs(opts?: {
+        count?: number;
+        state?: FinishedStatus;
+        timestamp?: number;
+    }): Promise<void>;
+    /**
+     * Trim the event stream to an approximately maxLength.
+     *
+     * @param maxLength -
+     */
+    trimEvents(maxLength: number): Promise<number>;
+}

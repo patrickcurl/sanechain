@@ -1,0 +1,18 @@
+name: "Bug Report"
+description: "File a bug report"
+body:
+  - type: "markdown"
+    attributes:
+      value: |
+        Thanks for creating an issue 😄!
+
+# contact_links:
+#   - name: Ask a question
+#     url: https://github.com/patrickcurl/sanechain/discussions
+#     about: Ask questions and discuss topics with other community members
+#   # - name: Documentation Request
+#     # url: https://github.com/patrickcurl/sanechain-docs/issues/new/choose
+#     # about: Request for documentation to be added/altered
+#   # - name: Chat with other community members
+#     # url: https://discord.gg/dQHfcWF
+#     # about: The official Chakra UI Discord community

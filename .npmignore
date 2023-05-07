@@ -1,0 +1,10 @@
+# Ignore test code
+test/
+*.spec.ts
+
+# Ignore TypeScript source files
+src/*.ts
+
+# Ignore development-only files
+package-lock.json
+tsconfig.json
